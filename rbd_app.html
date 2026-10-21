@@ -1,0 +1,558 @@
+<title>RBD Monitor</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#060a12;--surface:#0a1020;--surface-2:#0e1630;--surface-3:#122040;
+  --cyan:#00ccee;--cyan-dim:#0088aa;--cyan-glow:rgba(0,204,238,0.25);
+  --green:#00dd77;--green-dim:#009955;
+  --amber:#ddaa22;--amber-dim:#996600;
+  --red:#dd2244;--red-glow:rgba(221,34,68,0.3);
+  --blue:#2266dd;
+  --text-1:#d8e4f0;--text-2:#6888a8;--text-3:#384860;
+  --border:rgba(0,180,240,0.12);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{
+  font-family:'Inter',system-ui,sans-serif;
+  background:var(--bg);color:var(--text-1);
+  padding:8px 12px;min-height:100vh;
+  -webkit-font-smoothing:antialiased;
+  overscroll-behavior:none;
+}
+body::before{
+  content:'';position:fixed;inset:0;
+  background:linear-gradient(rgba(0,160,220,0.04) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(0,160,220,0.04) 1px,transparent 1px);
+  background-size:30px 30px;pointer-events:none;z-index:0;
+}
+.app{position:relative;z-index:1;max-width:500px;margin:0 auto;}
+.panel{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:3px;padding:12px;margin-bottom:8px;
+  position:relative;overflow:hidden;
+}
+.panel::before,.panel::after{
+  content:'';position:absolute;width:12px;height:12px;
+  border-color:var(--cyan-dim);border-style:solid;z-index:2;pointer-events:none;
+}
+.panel::before{top:-1px;left:-1px;border-width:2px 0 0 2px;}
+.panel::after{bottom:-1px;right:-1px;border-width:0 2px 2px 0;}
+.label{
+  font-family:'Orbitron',sans-serif;font-size:8px;font-weight:600;
+  color:var(--cyan-dim);letter-spacing:0.14em;text-transform:uppercase;
+  margin-bottom:8px;display:flex;align-items:center;gap:6px;
+}
+.label::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--border),transparent);}
+.top{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;}
+.logo{font-family:'Orbitron',sans-serif;font-size:13px;font-weight:700;color:var(--cyan);text-shadow:0 0 10px var(--cyan-glow);letter-spacing:0.1em;}
+.top-clock{margin-left:auto;font-family:'Orbitron',sans-serif;font-size:16px;font-weight:600;color:var(--cyan);text-shadow:0 0 6px var(--cyan-glow);font-variant-numeric:tabular-nums;letter-spacing:0.04em;}
+
+/* Tabs */
+.tabs{display:flex;gap:0;margin-bottom:8px;border:1px solid var(--border);border-radius:3px;overflow:hidden;}
+.tab{flex:1;padding:10px 6px;text-align:center;font-family:'Orbitron',sans-serif;font-size:10px;font-weight:600;letter-spacing:0.08em;color:var(--text-3);background:var(--surface-2);cursor:pointer;border-right:1px solid var(--border);transition:all 0.2s;}
+.tab:last-child{border-right:none;}
+.tab.active{color:var(--cyan);background:var(--surface);box-shadow:inset 0 -2px 0 var(--cyan);}
+.tab:active{transform:scale(0.97);}
+.tab-page{display:none;}.tab-page.active{display:block;}
+
+/* Buttons */
+.conn-row{display:flex;gap:8px;margin-bottom:8px;}
+.conn-btn{
+  flex:1;padding:10px 8px;border:1px solid var(--border);border-radius:3px;
+  background:var(--surface-2);color:var(--text-2);
+  font-family:'JetBrains Mono',monospace;font-size:11px;
+  text-align:center;cursor:pointer;transition:all 0.2s;
+  display:flex;flex-direction:column;align-items:center;gap:4px;
+}
+.conn-btn:active{transform:scale(0.97);}
+.conn-btn.connected{border-color:var(--green-dim);color:var(--green);}
+.conn-btn.error{border-color:var(--red);color:var(--red);}
+.conn-dot{width:6px;height:6px;border-radius:50%;background:var(--text-3);transition:all 0.3s;}
+.conn-btn.connected .conn-dot{background:var(--green);box-shadow:0 0 6px var(--green);}
+.conn-btn.error .conn-dot{background:var(--red);box-shadow:0 0 6px var(--red);}
+
+/* EEG */
+.wave-canvas{width:100%;height:120px;display:block;border-radius:2px;}
+.stage-row{display:flex;align-items:center;gap:12px;}
+.stage-big{font-family:'Orbitron',sans-serif;font-size:32px;font-weight:800;color:var(--amber);text-shadow:0 0 14px rgba(221,170,34,0.4);letter-spacing:0.04em;transition:color 0.4s,text-shadow 0.4s;line-height:1;}
+.stage-info{flex:1;}
+.stage-sub{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-3);}
+.vitals{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px;}
+.vital-card{text-align:center;padding:8px 4px;background:var(--surface-2);border-radius:3px;border:1px solid var(--border);}
+.vital-val{font-family:'Orbitron',sans-serif;font-size:18px;font-weight:700;letter-spacing:0.02em;line-height:1;}
+.vital-unit{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.06em;margin-top:2px;}
+.vital-label{font-family:'Orbitron',sans-serif;font-size:7px;font-weight:600;color:var(--text-3);letter-spacing:0.1em;text-transform:uppercase;margin-top:2px;}
+.bar-row{display:flex;align-items:center;gap:6px;margin-bottom:4px;}
+.bar-name{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text-3);width:36px;text-align:right;text-transform:uppercase;}
+.bar-track{flex:1;height:6px;background:var(--surface-3);border-radius:1px;overflow:hidden;}
+.bar-fill{height:100%;border-radius:1px;transition:width 0.3s;}
+.bar-val{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text-2);width:28px;text-align:right;font-variant-numeric:tabular-nums;}
+.tone-row{display:flex;align-items:center;gap:8px;margin-top:8px;}
+.tone-label{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text-3);width:60px;}
+.tone-bar{flex:1;height:8px;background:var(--surface-3);border-radius:2px;overflow:hidden;}
+.tone-fill{height:100%;border-radius:2px;transition:width 0.3s;background:var(--green);}
+.tone-fill.high{background:var(--red);}
+.tone-val{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-2);width:40px;text-align:right;}
+
+/* Camera */
+.cam-viewport{
+  position:relative;width:100%;aspect-ratio:16/9;
+  background:#000;border-radius:3px;overflow:hidden;
+  display:flex;align-items:center;justify-content:center;
+}
+.cam-viewport video,.cam-viewport img{width:100%;height:100%;object-fit:cover;display:block;}
+.cam-placeholder{text-align:center;padding:16px;color:var(--text-3);}
+.cam-placeholder-icon{font-size:36px;margin-bottom:8px;opacity:0.5;}
+.cam-placeholder-text{font-family:'JetBrains Mono',monospace;font-size:10px;line-height:1.6;}
+.cam-hud{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:linear-gradient(rgba(6,10,18,0.7),transparent);pointer-events:none;}
+.cam-hud-dot{width:8px;height:8px;border-radius:50%;background:var(--red);animation:recblink 1s ease infinite;}
+@keyframes recblink{0%,100%{opacity:1;}50%{opacity:0.3;}}
+.cam-hud-label{font-family:'Orbitron',sans-serif;font-size:8px;font-weight:600;color:var(--red);letter-spacing:0.1em;}
+.cam-hud-time{font-family:'JetBrains Mono',monospace;font-size:9px;color:rgba(255,255,255,0.6);}
+.cam-fps{position:absolute;bottom:6px;right:8px;font-family:'JetBrains Mono',monospace;font-size:9px;color:rgba(0,221,119,0.6);pointer-events:none;}
+.cam-controls{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;}
+.cam-ctrl-btn{
+  flex:1;min-width:60px;padding:8px 6px;border:1px solid var(--border);border-radius:3px;
+  background:var(--surface-2);color:var(--text-2);
+  font-family:'JetBrains Mono',monospace;font-size:10px;
+  text-align:center;cursor:pointer;transition:all 0.2s;
+}
+.cam-ctrl-btn:active{transform:scale(0.97);}
+.cam-ctrl-btn.active{border-color:var(--green-dim);color:var(--green);}
+.cam-ip-form{display:flex;gap:6px;margin-top:8px;}
+.cam-ip-input{
+  flex:1;padding:8px;border:1px solid var(--border);border-radius:3px;
+  background:var(--surface-3);color:var(--text-1);
+  font-family:'JetBrains Mono',monospace;font-size:12px;outline:none;
+}
+.cam-ip-input:focus{border-color:var(--cyan-dim);}
+.cam-ip-input::placeholder{color:var(--text-3);}
+.cam-status{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-3);margin-top:6px;padding:0 2px;}
+.cam-status.ok{color:var(--green);}
+.cam-status.err{color:var(--red);}
+
+/* Events */
+.evt-item{padding:8px 10px;margin-bottom:4px;background:linear-gradient(135deg,rgba(221,34,68,0.08),rgba(221,34,68,0.02));border-left:3px solid var(--red);border-radius:2px;font-family:'JetBrains Mono',monospace;font-size:10px;}
+.evt-time{color:var(--red);font-family:'Orbitron',sans-serif;font-size:10px;font-weight:600;}
+.evt-detail{color:var(--text-2);margin-top:2px;}
+.evt-empty{color:var(--text-3);font-family:'JetBrains Mono',monospace;font-size:10px;padding:6px 0;}
+.alert-overlay{position:fixed;inset:0;border:2px solid var(--red);box-shadow:inset 0 0 40px var(--red-glow);opacity:0;pointer-events:none;z-index:99;transition:opacity 0.1s;}
+.alert-overlay.on{opacity:1;animation:alertp 0.8s ease-out;}
+@keyframes alertp{0%{opacity:1;}100%{opacity:0;}}
+.ios-note{padding:8px 10px;background:rgba(221,170,34,0.08);border:1px solid rgba(221,170,34,0.2);border-radius:3px;font-size:11px;color:var(--amber);margin-bottom:8px;line-height:1.5;}
+.ios-note a{color:var(--cyan);}
+</style>
+
+<div class="alert-overlay" id="alertFlash"></div>
+<div class="app">
+  <div class="top">
+    <span class="logo">RBD MONITOR</span>
+    <span class="top-clock" id="clock">--:--:--</span>
+  </div>
+  <div id="iosNote" class="ios-note" hidden>
+    iOS Safari 不支援 Web Bluetooth。請用
+    <a href="https://apps.apple.com/app/bluefy-web-ble-browser/id1492822055" target="_blank">Bluefy</a> 開啟此頁。
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('eeg')">腦波</div>
+    <div class="tab" onclick="switchTab('cam')">攝影機</div>
+    <div class="tab" onclick="switchTab('events')">事件</div>
+  </div>
+
+  <!-- ===== EEG ===== -->
+  <div class="tab-page active" id="page-eeg">
+    <div class="conn-row">
+      <button class="conn-btn" id="h3Btn" onclick="connectH3()">
+        <span class="conn-dot"></span>
+        <span>H3 腦波</span>
+        <span style="font-size:9px;color:var(--text-3)">點擊連線</span>
+      </button>
+    </div>
+    <div class="panel">
+      <div class="label">EEG Realtime</div>
+      <canvas class="wave-canvas" id="waveCanvas"></canvas>
+      <div class="stage-row" style="margin-top:8px;">
+        <div class="stage-big" id="stageBig">--</div>
+        <div class="stage-info">
+          <div class="stage-sub" id="stageSub">等待 H3 連線...</div>
+          <div class="tone-row" style="margin-top:4px;">
+            <span class="tone-label">肌張力</span>
+            <div class="tone-bar"><div class="tone-fill" id="toneFill" style="width:0%"></div></div>
+            <span class="tone-val" id="toneVal">--</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="label">Vitals</div>
+      <div class="vitals">
+        <div class="vital-card"><div class="vital-val" id="hrVal" style="color:var(--green);">--</div><div class="vital-unit">bpm</div><div class="vital-label">Heart Rate</div></div>
+        <div class="vital-card"><div class="vital-val" id="accVal" style="color:var(--amber);">--</div><div class="vital-unit">activity</div><div class="vital-label">Motion</div></div>
+        <div class="vital-card"><div class="vital-val" id="evtVal" style="color:var(--red);">0</div><div class="vital-unit">events</div><div class="vital-label">RBD</div></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="label">EEG Band Power</div>
+      <div class="bar-row"><span class="bar-name">Delta</span><div class="bar-track"><div class="bar-fill" id="bpDelta" style="width:0%;background:var(--blue);"></div></div><span class="bar-val" id="bpDeltaV">--</span></div>
+      <div class="bar-row"><span class="bar-name">Theta</span><div class="bar-track"><div class="bar-fill" id="bpTheta" style="width:0%;background:var(--cyan);"></div></div><span class="bar-val" id="bpThetaV">--</span></div>
+      <div class="bar-row"><span class="bar-name">Alpha</span><div class="bar-track"><div class="bar-fill" id="bpAlpha" style="width:0%;background:var(--amber);"></div></div><span class="bar-val" id="bpAlphaV">--</span></div>
+      <div class="bar-row"><span class="bar-name">Sigma</span><div class="bar-track"><div class="bar-fill" id="bpSigma" style="width:0%;background:#8866cc;"></div></div><span class="bar-val" id="bpSigmaV">--</span></div>
+      <div class="bar-row"><span class="bar-name">Beta</span><div class="bar-track"><div class="bar-fill" id="bpBeta" style="width:0%;background:#cc5588;"></div></div><span class="bar-val" id="bpBetaV">--</span></div>
+    </div>
+  </div>
+
+  <!-- ===== CAMERA ===== -->
+  <div class="tab-page" id="page-cam">
+    <div class="panel">
+      <div class="label">Live Video</div>
+      <div class="cam-viewport" id="camViewport">
+        <video id="phoneCamVideo" autoplay playsinline muted hidden></video>
+        <img id="wsFrameImg" hidden alt="">
+        <div class="cam-placeholder" id="camPlaceholder">
+          <div class="cam-placeholder-icon">📡</div>
+          <div class="cam-placeholder-text">
+            輸入 Mac mini IP 連接即時串流<br>
+            <span style="color:var(--text-3);font-size:9px;">Mac mini 需執行 relay_server.py</span>
+          </div>
+        </div>
+        <div class="cam-hud" id="camHud" hidden>
+          <div style="display:flex;align-items:center;gap:5px;">
+            <div class="cam-hud-dot"></div>
+            <span class="cam-hud-label" id="camHudLabel">LIVE</span>
+          </div>
+          <span class="cam-hud-time" id="camHudTime"></span>
+        </div>
+        <span class="cam-fps" id="camFps"></span>
+      </div>
+
+      <!-- Server IP -->
+      <div class="cam-ip-form">
+        <input class="cam-ip-input" id="serverIpInput" placeholder="Mac mini IP (例: 192.168.1.50)" inputmode="url">
+        <button class="cam-ctrl-btn" style="flex:0;min-width:60px;" id="btnConnect" onclick="connectRelay()">連線</button>
+      </div>
+      <div class="cam-status" id="camStatus">Mac mini 執行 python relay_server.py 後輸入 IP</div>
+
+      <div class="cam-controls" style="margin-top:8px;">
+        <button class="cam-ctrl-btn" id="btnRelay" onclick="connectRelay()">轉播伺服器</button>
+        <button class="cam-ctrl-btn" id="btnPhoneCam" onclick="startPhoneCam()">手機鏡頭</button>
+        <button class="cam-ctrl-btn" id="btnStop" onclick="stopAllCam()">停止</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="label">Mac Mini 設定指引</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-2);line-height:1.8;">
+        <div style="color:var(--cyan);margin-bottom:4px;">Step 1: 安裝 websockets</div>
+        <div style="background:var(--surface-3);padding:6px 8px;border-radius:2px;margin-bottom:8px;overflow-x:auto;">pip install websockets</div>
+        <div style="color:var(--cyan);margin-bottom:4px;">Step 2: 啟動轉播伺服器</div>
+        <div style="background:var(--surface-3);padding:6px 8px;border-radius:2px;margin-bottom:8px;overflow-x:auto;">cd h3-remote && python relay_server.py</div>
+        <div style="color:var(--cyan);margin-bottom:4px;">Step 3: 在手機輸入 Mac mini IP</div>
+        <div style="color:var(--text-3);font-size:9px;line-height:1.6;">
+          伺服器啟動後會顯示 IP 位址<br>
+          手機和 Mac mini 須在同一 WiFi<br>
+          遠端連線可用 ngrok 或 Tailscale
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== EVENTS ===== -->
+  <div class="tab-page" id="page-events">
+    <div class="panel">
+      <div class="label">Vitals Summary</div>
+      <div class="vitals">
+        <div class="vital-card"><div class="vital-val" id="hrVal2" style="color:var(--green);">--</div><div class="vital-unit">bpm</div><div class="vital-label">Heart Rate</div></div>
+        <div class="vital-card"><div class="vital-val" id="stageVal2" style="color:var(--amber);">--</div><div class="vital-unit">stage</div><div class="vital-label">Sleep</div></div>
+        <div class="vital-card"><div class="vital-val" id="evtVal2" style="color:var(--red);">0</div><div class="vital-unit">events</div><div class="vital-label">RBD</div></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="label">RBD Events</div>
+      <div id="evtList"><div class="evt-empty">// 等待監測中...</div></div>
+    </div>
+  </div>
+
+  <div style="text-align:center;padding:12px;font-size:9px;color:var(--text-3);font-family:'JetBrains Mono',monospace;">
+    <span id="statusText">H3 連線後開始即時監測</span>
+  </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+// ─── Tabs ───
+window.switchTab=function(name){
+  document.querySelectorAll('.tab').forEach((t,i)=>{
+    t.classList.toggle('active',['eeg','cam','events'][i]===name);
+  });
+  document.querySelectorAll('.tab-page').forEach(p=>p.classList.remove('active'));
+  const pg=document.getElementById('page-'+name);
+  if(pg)pg.classList.add('active');
+  if(name==='eeg')resizeCanvas();
+};
+
+// ─── BLE ───
+const SVC='0000fff0-0000-1000-8000-00805f9b34fb';
+const CHR_N='0000fff5-0000-1000-8000-00805f9b34fb';
+const CHR_W='0000fff6-0000-1000-8000-00805f9b34fb';
+const CMD_ON=new Uint8Array([0x4B,0x59,0x58,0x42,0x10,0x80,0x00]);
+const UV=25208.3/32768.0;
+const SR=250;
+
+class H3P{
+  constructor(){this.reset();}
+  reset(){this.mode='t';this.ln=[];this.hdr=[];this.hL=0;this.n=0;this.m=0;this.tw=0;this.dv=[];this.dt=[];this.tr=[];this.bc=0;}
+  feed(b){
+    const o=[];let i=0;const L=b.length;
+    while(i<L){
+      if(this.mode==='t'){
+        const c=b[i++];
+        if(c===0x0D){
+          const ln=this.ln.slice();this.ln=[];
+          if(ln.length===8){const s=String.fromCharCode(...ln);if(s.startsWith('x=')&&/^[0-9a-fA-F]+$/.test(s.slice(2))){const cnt=parseInt(s.slice(2,6),16)&0xFFFF;const cs=parseInt(s.slice(6,8),16)&0xFF;if(((cnt>>8)+(cnt&0xFF)&0xFF)===cs){this.hdr=[];this.hL=0;this.mode='h';continue;}}}
+          if(ln.length>0)o.push({t:'l',d:String.fromCharCode(...ln)});
+        }else if(c!==0x0A&&this.ln.length<512)this.ln.push(c);
+      }else if(this.mode==='h'){
+        this.hdr.push(b[i++]);
+        if(this.hdr.length===2){this.n=this.hdr[0]+1;this.m=this.hdr[1]+1;if(this.m>8||this.n>64){this.mode='t';this.ln=[];continue;}this.hL=((this.m+1)>>1)+2;}
+        if(this.hdr.length>=2&&this.hdr.length===this.hL){
+          const nb=[];for(let j=2;j<this.hdr.length;j++){nb.push((this.hdr[j]>>4)+1);nb.push((this.hdr[j]&0x0F)+1);}
+          this.dv=nb.slice(0,this.m);this.tw=0;for(const d of this.dv)this.tw+=Math.floor(this.n/d);
+          if(this.tw<=0||this.tw>2048){this.mode='t';this.ln=[];continue;}this.dt=[];this.mode='d';
+        }
+      }else if(this.mode==='d'){
+        const nd=this.tw*2-this.dt.length;const tk=Math.min(nd,L-i);for(let j=0;j<tk;j++)this.dt.push(b[i++]);
+        if(this.dt.length===this.tw*2){this.tr=[];this.mode='r';}
+      }else if(this.mode==='r'){
+        this.tr.push(b[i++]);
+        if(this.tr.length===2){
+          const ch=[];for(let c=0;c<this.m;c++)ch.push([]);let k=0;
+          for(let si=0;si<this.n;si++)for(let c=0;c<this.m;c++){if(si%this.dv[c]===0){ch[c].push((this.dt[2*k]<<8)|this.dt[2*k+1]);k++;}}
+          this.bc++;this.mode='t';this.ln=[];o.push({t:'b',d:ch});
+        }
+      }
+    }
+    return o;
+  }
+}
+
+// ─── DSP ───
+function bp(sig,sf){
+  const N=sig.length;if(N<16)return{delta:0,theta:0,alpha:0,sigma:0,beta:0};
+  let mu=0;for(let i=0;i<N;i++)mu+=sig[i];mu/=N;
+  const x=new Float64Array(N);for(let i=0;i<N;i++)x[i]=sig[i]-mu;
+  const psd=new Float64Array((N>>1)+1);
+  for(let k=0;k<=(N>>1);k++){let r=0,m=0;for(let n=0;n<N;n++){const a=6.283185307*k*n/N;r+=x[n]*Math.cos(a);m-=x[n]*Math.sin(a);}psd[k]=(r*r+m*m)/(N*sf);}
+  const df=sf/N;const bands={delta:[.5,4],theta:[4,8],alpha:[8,12],sigma:[12,16],beta:[16,30]};
+  const r={};let tot=0;
+  for(const[nm,[lo,hi]]of Object.entries(bands)){let s=0;for(let k=Math.ceil(lo/df);k<=Math.floor(hi/df)&&k<psd.length;k++)s+=psd[k]*df;r[nm]=s;tot+=s;}
+  if(tot>0)for(const k in r)r[k]/=tot;return r;
+}
+function mt(s){const N=s.length;if(N<20)return 0;let sm=0;for(let i=2;i<N;i++){const y=s[i]-2*s[i-1]+s[i-2];sm+=y*y;}return Math.sqrt(sm/Math.max(N-2,1));}
+function cs(b,ri){const{delta:d,theta:t,alpha:a,sigma:s,beta:bt}=b;if(a+bt>.45)return'WAKE';if(d<.35&&t>.2&&ri>.35)return'REM';if(d>.4||s>.1)return'NREM';if(d+t>a+bt)return'NREM';return'WAKE';}
+function hr(ecg,sr){let mx=0;for(const v of ecg)if(Math.abs(v)>mx)mx=Math.abs(v);if(mx<10)return 0;const th=mx*.6;const pk=[];for(let i=1;i<ecg.length-1;i++)if(ecg[i]>th&&ecg[i]>ecg[i-1]&&ecg[i]>ecg[i+1])if(!pk.length||i-pk[pk.length-1]>sr*.4)pk.push(i);if(pk.length<2)return 0;let t=0;for(let i=1;i<pk.length;i++)t+=pk[i]-pk[i-1];return 60*sr/(t/(pk.length-1));}
+
+// ─── State ───
+const parser=new H3P();let device=null;
+let eB=[],oB=[],cB=[],aX=[],aY=[],aZ=[];
+const W=1000;let conn=false,stH=[],tN=[],tR=[];
+let rC=0,lET=-1e9,eC=0,sT=null,el=0;
+const sC={WAKE:'#ddaa22',NREM:'#2266dd',REM:'#00ccee','--':'#384860'};
+
+// ─── Camera State ───
+let ws=null,phoneCamStream=null,camMode=null;
+let fpsFrames=0,fpsLast=Date.now();
+
+// ─── Clock ───
+setInterval(()=>{const t=new Date().toTimeString().slice(0,8);document.getElementById('clock').textContent=t;const ch=document.getElementById('camHudTime');if(ch&&!document.getElementById('camHud').hidden)ch.textContent=t;},1000);
+
+// ─── iOS ───
+if(/iPad|iPhone|iPod/.test(navigator.userAgent)&&!navigator.bluetooth)document.getElementById('iosNote').hidden=false;
+
+// ─── Restore saved IP ───
+try{const ip=localStorage.getItem('relay_ip');if(ip)document.getElementById('serverIpInput').value=ip;}catch(e){}
+
+// ─── BLE ───
+window.connectH3=async function(){
+  const btn=document.getElementById('h3Btn');
+  if(conn)return;
+  if(!navigator.bluetooth){btn.className='conn-btn error';btn.querySelector('span:last-child').textContent='瀏覽器不支援';return;}
+  try{
+    btn.querySelector('span:last-child').textContent='搜尋中...';
+    device=await navigator.bluetooth.requestDevice({filters:[{namePrefix:'xb'}],optionalServices:[SVC]});
+    btn.querySelector('span:last-child').textContent='連線中...';
+    const sv=await device.gatt.connect();const svc=await sv.getPrimaryService(SVC);
+    const cn=await svc.getCharacteristic(CHR_N);const cw=await svc.getCharacteristic(CHR_W);
+    await cn.startNotifications();cn.addEventListener('characteristicvaluechanged',onBLE);
+    await cw.writeValue(CMD_ON);
+    conn=true;sT=Date.now();
+    btn.className='conn-btn connected';btn.querySelector('span:last-child').textContent='已連線';
+    document.getElementById('statusText').textContent='H3 即時監測中';
+    document.getElementById('stageSub').textContent='即時分析中...';
+    device.addEventListener('gattserverdisconnected',()=>{conn=false;btn.className='conn-btn error';btn.querySelector('span:last-child').textContent='已斷線 - 點擊重連';});
+  }catch(e){btn.className='conn-btn error';btn.querySelector('span:last-child').textContent='失敗 - 再試';console.error(e);}
+};
+
+function onBLE(ev){
+  const raw=new Uint8Array(ev.target.value.buffer);
+  const pay=raw.length>6?raw.slice(6):raw;
+  for(const e of parser.feed(pay)){
+    if(e.t==='b'){
+      const ch=e.d;
+      if(ch.length>=4){for(const w of ch[0])eB.push((w-32768)*UV);for(const w of ch[3])oB.push((w-32768)*UV);for(const w of ch[2])cB.push((w-32768)*UV);}
+      if(ch.length>=7){for(const w of ch[4])aX.push(w-32768);for(const w of ch[5])aY.push(w-32768);for(const w of ch[6])aZ.push(w-32768);}
+      const mx=SR*10;if(eB.length>mx)eB=eB.slice(-mx);if(oB.length>mx)oB=oB.slice(-mx);if(cB.length>mx)cB=cB.slice(-mx);
+      if(aX.length>mx/5)aX=aX.slice(-mx/5);if(aY.length>mx/5)aY=aY.slice(-mx/5);if(aZ.length>mx/5)aZ=aZ.slice(-mx/5);
+    }
+  }
+}
+
+// ─── Analysis ───
+setInterval(()=>{
+  if(!conn||eB.length<W)return;
+  el=(Date.now()-sT)/1000;
+  const h=Math.floor(el/3600),m=Math.floor((el%3600)/60),s=Math.floor(el%60);
+  const eeg=eB.slice(-W),eog=oB.length>=W?oB.slice(-W):eeg;
+  const ds=[];for(let i=0;i<eeg.length;i+=4)ds.push(eeg[i]);
+  const b=bp(ds,SR/4);
+  for(const[k,v]of Object.entries(b)){
+    const p=Math.min(Math.max(v,0),.6)/.6*100;
+    const el2=document.getElementById('bp'+k[0].toUpperCase()+k.slice(1));
+    const ve=document.getElementById('bp'+k[0].toUpperCase()+k.slice(1)+'V');
+    if(el2)el2.style.width=p+'%';if(ve)ve.textContent=(v*100).toFixed(0)+'%';
+  }
+  const tone=mt(eog);const tp=Math.min(tone/50*100,100);
+  const tf=document.getElementById('toneFill');tf.style.width=tp+'%';tf.className='tone-fill'+(tone>20?' high':'');
+  document.getElementById('toneVal').textContent=tone.toFixed(1);
+  const dE=[];for(let i=0;i<eog.length;i+=4)dE.push(eog[i]);
+  const eB2=bp(dE,SR/4);const ri=(eB2.delta||0)+((eB2.theta||0)*.5);
+  const stage=cs(b,ri>.4?.5:.2);stH.push(stage);
+  const sb=document.getElementById('stageBig');sb.textContent=stage;sb.style.color=sC[stage];sb.style.textShadow='0 0 14px '+sC[stage]+'66';
+  document.getElementById('stageSub').textContent=`${h}h${String(m).padStart(2,'0')}m${String(s).padStart(2,'0')}s`;
+  document.getElementById('stageVal2').textContent=stage;document.getElementById('stageVal2').style.color=sC[stage];
+  if(stage==='NREM')tN.push(tone);if(stage==='REM'){rC++;tR.push(tone);}else rC=0;
+  if(aX.length>5){
+    const ax=aX.slice(-10),ay=aY.slice(-10),az=aZ.slice(-10);let act=0;
+    for(let i=1;i<ax.length;i++)act+=Math.abs(ax[i]-ax[i-1])+Math.abs(ay[i]-ay[i-1])+Math.abs(az[i]-az[i-1]);
+    act/=Math.max(ax.length-1,1);document.getElementById('accVal').textContent=(act/100).toFixed(2);
+    if(stage==='REM'&&rC>=3&&act>500&&el-lET>30){eC++;lET=el;document.getElementById('evtVal').textContent=eC;document.getElementById('evtVal2').textContent=eC;addEvt(h,m,s,tone);}
+  }
+  if(cB.length>=SR*3){const r=hr(cB.slice(-SR*3),SR);if(r>30&&r<200){const v=Math.round(r).toString();document.getElementById('hrVal').textContent=v;document.getElementById('hrVal2').textContent=v;}}
+},1000);
+
+function addEvt(h,m,s,tone){
+  const el=document.getElementById('evtList');if(el.querySelector('.evt-empty'))el.innerHTML='';
+  const rswa=tN.length>30&&tone>1.5*(tN.reduce((a,b)=>a+b,0)/tN.length);
+  const d=document.createElement('div');d.className='evt-item';
+  d.innerHTML=`<div class="evt-time">${h}h${String(m).padStart(2,'0')}m${String(s).padStart(2,'0')}s</div><div class="evt-detail">REM 異常動作${rswa?' + RSWA':''}</div>`;
+  el.prepend(d);
+  document.getElementById('alertFlash').classList.add('on');setTimeout(()=>document.getElementById('alertFlash').classList.remove('on'),800);
+  if(navigator.vibrate)navigator.vibrate([200,100,200,100,500]);
+}
+
+// ─── EEG Waveform ───
+const cv=document.getElementById('waveCanvas');const cx=cv.getContext('2d');
+function resizeCanvas(){const r=cv.getBoundingClientRect();cv.width=r.width*2;cv.height=r.height*2;cx.setTransform(2,0,0,2,0,0);}
+resizeCanvas();window.addEventListener('resize',resizeCanvas);
+function drawWave(){
+  const w=cv.width/2,h=cv.height/2;cx.clearRect(0,0,w,h);
+  cx.strokeStyle='rgba(0,160,220,0.06)';cx.lineWidth=1;
+  for(let y=0;y<h;y+=h/4){cx.beginPath();cx.moveTo(0,y);cx.lineTo(w,y);cx.stroke();}
+  cx.beginPath();cx.moveTo(0,h/2);cx.lineTo(w,h/2);cx.strokeStyle='rgba(0,180,240,0.1)';cx.stroke();
+  if(eB.length<100){cx.beginPath();for(let x=0;x<w;x++){const t=x/w*6+Date.now()/1000;const y=h/2+Math.sin(t)*3+Math.sin(t*2.3)*2+Math.sin(t*5.7)*1;x===0?cx.moveTo(x,y):cx.lineTo(x,y);}cx.strokeStyle='rgba(0,204,238,0.3)';cx.lineWidth=1;cx.stroke();}
+  else{
+    const data=eB.slice(-Math.min(eB.length,w*2));const step=data.length/w;const sc=h/400;
+    const stage=document.getElementById('stageBig').textContent;const col=sC[stage]||'#00ccee';
+    cx.beginPath();for(let x=0;x<w;x++){const idx=Math.floor(x*step);const y=h/2-data[idx]*sc;x===0?cx.moveTo(x,y):cx.lineTo(x,y);}cx.strokeStyle=col+'30';cx.lineWidth=4;cx.stroke();
+    cx.beginPath();for(let x=0;x<w;x++){const idx=Math.floor(x*step);const y=h/2-data[idx]*sc;x===0?cx.moveTo(x,y):cx.lineTo(x,y);}cx.strokeStyle=col;cx.lineWidth=1;cx.lineJoin='round';cx.stroke();
+  }
+  requestAnimationFrame(drawWave);
+}
+drawWave();
+
+// ─── WebSocket Video Relay ───
+window.connectRelay=function(){
+  const ipEl=document.getElementById('serverIpInput');
+  const ip=ipEl.value.trim();if(!ip){setCS('請輸入 IP','err');return;}
+  try{localStorage.setItem('relay_ip',ip);}catch(e){}
+  stopAllCam();
+  const port=9876;
+  const url='ws://'+ip+':'+port;
+  setCS('連線中... '+url,'');
+  ws=new WebSocket(url);
+  ws.onopen=function(){
+    setCS('已連線 ✓ 即時串流中','ok');
+    document.getElementById('camPlaceholder').hidden=true;
+    document.getElementById('camHud').hidden=false;
+    document.getElementById('camHudLabel').textContent='LIVE';
+    document.getElementById('btnRelay').classList.add('active');
+    camMode='relay';fpsFrames=0;fpsLast=Date.now();
+  };
+  ws.onmessage=function(ev){
+    try{
+      const msg=JSON.parse(ev.data);
+      if(msg.type==='frame'&&msg.data){
+        const img=document.getElementById('wsFrameImg');
+        img.src='data:image/jpeg;base64,'+msg.data;
+        img.hidden=false;
+        fpsFrames++;
+        const now=Date.now();
+        if(now-fpsLast>=1000){
+          document.getElementById('camFps').textContent=fpsFrames+' fps';
+          fpsFrames=0;fpsLast=now;
+        }
+      }
+    }catch(e){}
+  };
+  ws.onerror=function(){setCS('連線失敗 — 確認 Mac mini relay_server.py 已啟動','err');};
+  ws.onclose=function(){
+    setCS('已斷線','err');
+    document.getElementById('btnRelay').classList.remove('active');
+    if(camMode==='relay'){
+      document.getElementById('camPlaceholder').hidden=false;
+      document.getElementById('camHud').hidden=true;
+      document.getElementById('wsFrameImg').hidden=true;
+      document.getElementById('camFps').textContent='';
+    }
+    camMode=null;ws=null;
+  };
+};
+
+function setCS(txt,cls){const el=document.getElementById('camStatus');el.textContent=txt;el.className='cam-status'+(cls?' '+cls:'');}
+
+// ─── Phone Camera ───
+window.startPhoneCam=async function(){
+  stopAllCam();
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1280},height:{ideal:720}},audio:false});
+    phoneCamStream=stream;
+    const v=document.getElementById('phoneCamVideo');v.srcObject=stream;v.hidden=false;
+    document.getElementById('camPlaceholder').hidden=true;
+    document.getElementById('camHud').hidden=false;document.getElementById('camHudLabel').textContent='PHONE';
+    document.getElementById('btnPhoneCam').classList.add('active');camMode='phone';
+    setCS('手機鏡頭已啟動','ok');
+  }catch(e){setCS('無法開啟鏡頭: '+e.message,'err');}
+};
+
+window.stopAllCam=function(){
+  if(ws){try{ws.close();}catch(e){}ws=null;}
+  if(phoneCamStream){phoneCamStream.getTracks().forEach(t=>t.stop());phoneCamStream=null;}
+  document.getElementById('phoneCamVideo').hidden=true;
+  document.getElementById('wsFrameImg').hidden=true;
+  document.getElementById('camPlaceholder').hidden=false;
+  document.getElementById('camHud').hidden=true;
+  document.getElementById('camFps').textContent='';
+  document.getElementById('btnRelay').classList.remove('active');
+  document.getElementById('btnPhoneCam').classList.remove('active');
+  camMode=null;setCS('已停止','');
+};
+
+window.openTapo=function(){window.location.href='tapo://';};
+
+})();
+</script>
